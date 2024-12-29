@@ -1,0 +1,150 @@
+version: "3.9"
+name: diamond
+
+
+services:
+  web:
+    container_name: web
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    volumes:
+      - ./service:/service
+      - ./letsencrypt:/etc/letsencrypt
+      - static_volume:/service/static
+      - media_volume:/service/media
+    env_file:
+      - service/.env
+    depends_on:
+      - postgres
+    networks:
+      - service
+  daphne:
+    container_name: daphne
+    build:
+      context: .
+      dockerfile: Dockerfile_websocket
+    command: daphne -e ssl:443:privateKey=/etc/letsencrypt/live/red-caviar-wholesale.host/fullchain.pem:certKey=/etc/letsencrypt/live/red-caviar-wholesale.host/privkey.pem diamond.asgi:application
+    restart: unless-stopped
+    ports:
+      - "8081:8081"
+    volumes:
+      - ./letsencrypt:/etc/letsencrypt
+      - static_volume:/service/static
+      - media_volume:/service/media
+    env_file:
+      - service/.env
+    networks:
+      - service
+    depends_on:
+      - web
+  nginx:
+    container_name: nginx
+    image: nginx:latest
+    restart: always
+    ports:
+      - "80:80"
+      - "443:443"
+    networks:
+      - service
+    volumes:
+      - ./nginx/conf.d/:/etc/nginx/conf.d/
+      - ./letsencrypt:/etc/letsencrypt
+      - static_volume:/var/www/html/static
+      - media_volume:/var/www/html/media
+  certbot:
+    image: certbot/certbot
+    container_name: certbot
+    volumes:
+      - ./letsencrypt:/etc/letsencrypt
+    depends_on:
+      - nginx
+    command: certonly --manual --preferred-challenges=dns  --email sadykov-maksim-2003@yandex.ru --agree-tos --no-eff-email -d red-caviar-wholesale.host -d *.red-caviar-wholesale.host
+  postgres:
+    container_name: postgres
+    image: postgres:latest
+    restart: always
+    volumes:
+      - postgres_volume:/var/lib/postgresql/data
+    env_file:
+      - service/.env
+    ports:
+      - "5432:5432"
+    networks:
+      - service
+  redis:
+    container_name: redis
+    image: redis/redis-stack-server:latest
+    restart: unless-stopped
+    volumes:
+      - redis_server_volume:/db
+    networks:
+      - service
+    depends_on:
+      - postgres
+  rabbitmq:
+    container_name: rabbitmq
+    image: rabbitmq:3.10.6-management-alpine
+    environment:
+      - RABBITMQ_DEFAULT_USER=developer
+      - RABBITMQ_DEFAULT_PASS=integration
+    volumes:
+      - rabbitmq_volume:/var/lib/rabbitmq/mnesia
+    networks:
+      - service
+    ports:
+      - 5672:5672
+      - 15672:15672
+  celery:
+    container_name: celery
+    build:
+      context: .
+    entrypoint: celery
+    command: -A diamond worker -l info
+    restart: unless-stopped
+    env_file:
+      - service/.env
+    volumes:
+      - static_volume:/service/static
+      - media_volume:/service/media
+    networks:
+      - service
+    depends_on:
+      - rabbitmq
+      - redis
+  celery-beat:
+    build:
+      context: .
+    container_name: celery-beat
+    entrypoint: celery
+    command: -A diamond beat -l INFO --scheduler django_celery_beat.schedulers:DatabaseScheduler
+    depends_on:
+      - celery
+      - redis
+    networks:
+      - service
+  flower:
+    container_name: celery-flower
+    image: mher/flower:latest
+    ports:
+      - "5555:5555"
+    environment:
+      - CELERY_BROKER_URL=redis://redis:6379/0
+    depends_on:
+      - redis
+      - rabbitmq
+    networks:
+      - service
+volumes:
+  static_volume:
+  media_volume:
+  postgres_volume:
+  redis_server_volume:
+  rabbitmq_volume:
+  certbot-etc:
+  certbot-var:
+  web-root:
+networks:
+  service:
+    driver: bridge

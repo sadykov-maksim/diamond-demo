@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+{% load static %}
+<html>
+<head>
+  <meta charset="utf-8"/>
+  <title>Chat Rooms</title>
+
+    <link rel="stylesheet" href="{% static 'chat/style.css' %}">
+</head>
+<body>
+
+    <button id="login-button">Login</button>
+<h4>Hi - <span id="username"></span></h4>
+<textarea id="chat-log" cols="100" rows="20"></textarea><br>
+<input id="chat-message-input" type="text" size="100"><br>
+<input id="chat-message-submit" type="button" value="Send">
+<div>
+    <label for="bet-wager-input">Wager:</label>
+    <input type="number" id="bet-wager-input" placeholder="Enter your wager">
+</div>
+<div>
+    <label for="bet-type-select">Bet Type:</label>
+    <select id="bet-type-select">
+        <option value="Red">Red</option>
+        <option value="Black">Black</option>
+        <option value="Odd">Odd</option>
+        <option value="Even">Even</option>
+    </select>
+</div>
+<div>
+    <label for="bet-numbers-input">Numbers:</label>
+    <input type="text" id="bet-numbers-input" placeholder="Enter numbers (e.g., 1,2,3)">
+</div>
+<div>
+    <label for="bet-odds-input">Odds:</label>
+    <input type="number" step="0.1" id="bet-odds-input" placeholder="Enter odds">
+</div>
+<button id="bet-submit">Place Bet</button>
+
+<script
+    src="https://code.jquery.com/jquery-3.6.0.min.js"
+    integrity="sha256-/xUj+3OJU5yExlq6GSYGSHk7tPXikynS7ogEvDej/m4="
+    crossorigin="anonymous"></script>
+<script>
+
+    const room_pk = "{{ room.pk }}";
+    const request_id = new Date().getTime()
+    const token = ''
+    console.log(room_pk)
+    console.log(request_id)
+    console.log("request", '{{request}}')
+    const chatSocket = new WebSocket(`ws://ws.${window.location.host}/ws/chat/?token=${localStorage.getItem('token')}`);
+    async function login(username, password) {
+      try {
+        const response = await fetch('http://localhost/token/', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            username: username,
+            password: password,
+          }),
+        });
+
+        const data = await response.json();
+
+        if (response.ok) {
+          // Сохраняем access token в localStorage
+          localStorage.setItem('token', data.access);
+
+          console.log('Login successful');
+        } else {
+          console.error('Login failed:', data.error);
+        }
+      } catch (error) {
+        console.error('Error during login:', error);
+      }
+    }
+
+
+const loginButton = document.getElementById('login-button');
+
+
+// Обработчик события для кнопки входа
+loginButton.addEventListener('click', async function() {
+const username = 'avocado';
+const password = 'jsXJ8YR0dT;hxx\\pg1r4I56*}_[w29';
+
+  // Проверка на пустые значения
+  if (!username || !password) {
+    alert('Please enter both username and password');
+    return;
+  }
+
+  // Вызов функции для авторизации
+  await login(username, password);
+});
+
+
+    chatSocket.onopen = function () {
+        chatSocket.send(
+            JSON.stringify({
+                pk: room_pk,
+                action: "join_room",
+                request_id: request_id,
+            })
+        );
+        chatSocket.send(
+            JSON.stringify({
+                pk: room_pk,
+                action: "retrieve",
+                request_id: request_id,
+            })
+        );
+        chatSocket.send(
+            JSON.stringify({
+                pk: room_pk,
+                action: "subscribe_to_messages_in_room",
+                request_id: request_id,
+            })
+        );
+        chatSocket.send(
+            JSON.stringify({
+                pk: room_pk,
+                action: "subscribe_instance",
+                request_id: request_id,
+            })
+        );
+    };
+
+    chatSocket.onmessage = function (e) {
+    const data = JSON.parse(e.data);
+    console.log('RealTime', data.data);
+    const chatLog = document.getElementById('chat-log');
+
+     if (data.action === 'spin_roulette_result') {
+        const degree = data.degree;
+         console.log(degree);
+        spinWheel(degree);
+    }
+
+    switch (data.action) {
+        case "retrieve":
+            console.log(data.data);
+            document.getElementById('username').innerText = data.data.host.username;
+
+            // Выводим все старые сообщения
+            for (let mess of data.data.messages) {
+                chatLog.value += `${mess.user.username}: ${mess.text}\n`;
+            }
+            break;
+        case "create":
+            console.log(data.action, data.data);
+
+            // Добавляем новое сообщение
+            chatLog.value += `${data.data.user.username}: ${data.data.text}\n`;
+            chatLog.scrollTop = chatLog.scrollHeight; // Прокручиваем вниз
+            break;
+        default:
+            break;
+    }
+};
+
+    chatSocket.onclose = function (e) {
+        console.error('Chat socket closed unexpectedly');
+    };
+
+    $('#chat-message-input').focus();
+    $('#chat-message-input').on('keyup', function (e) {
+        if (e.keyCode === 13) {  // enter, return
+            document.querySelector('#chat-message-submit').click();
+        }
+    });
+    $('#bet-submit').on('click', function (e) {
+    // Получаем данные ставки
+    const wager = $('#bet-wager-input').val();  // Поле для ввода суммы ставки
+    const betType = $('#bet-type-select').val();  // Поле для выбора типа ставки
+    const numbers = $('#bet-numbers-input').val();  // Поле для выбора номеров
+    const odds = $('#bet-odds-input').val();  // Поле для коэффициента
+    const roomPk = room_pk;  // Идентификатор комнаты (установлен где-то в коде)
+
+    // Отправляем данные через WebSocket
+    chatSocket.send(JSON.stringify({
+        action: "setBet_inspection",
+        request_id: request_id,
+        wager: wager,
+        bet_type: betType,
+        numbers: numbers,
+        odds: odds,
+        pk: roomPk
+    }));
+
+    // Очищаем поля ввода после отправки
+    $('#bet-wager-input').val('');
+    $('#bet-numbers-input').val('');
+});
+
+    $('#chat-message-submit').on('click', function (e) {
+        const message = $('#chat-message-input').val();
+            var winningSpin = Math.floor(Math.random() * 36);
+        chatSocket.send(JSON.stringify({
+            action: "spin_roulette_animate",
+        winningSpin: winningSpin,
+            request_id: request_id,
+            pk: room_pk,
+        }));
+        $('#chat-message-input').val('');
+    });
+
+</script>
+    <script  src="{% static 'chat/main.js' %}"></script>
+</body>
+</html>

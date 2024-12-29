@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Spin History Check</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            padding: 20px;
+        }
+        h1 {
+            text-align: center;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+        th, td {
+            padding: 10px;
+            border: 1px solid #ddd;
+            text-align: left;
+        }
+        th {
+            background-color: #f2f2f2;
+        }
+        #spinHistory {
+            margin-top: 20px;
+            overflow-x: auto;
+        }
+        #loading {
+            text-align: center;
+            font-size: 18px;
+        }
+    </style>
+</head>
+<body>
+
+    <h1>Spin History</h1>
+
+    <div id="loading">
+        <p>Loading spin history...</p>
+    </div>
+
+    <div id="spinHistory" style="display: none;">
+        <table id="spinHistoryTable">
+            <thead>
+                <tr>
+                    <th>User</th>
+                    <th>Room</th>
+                    <th>Result</th>
+                    <th>Time</th>
+                </tr>
+            </thead>
+            <tbody>
+                <!-- Spin history will be dynamically added here -->
+            </tbody>
+        </table>
+    </div>
+
+    <script>
+        const userId = 1;  // Example user ID
+        const roomId = 1;  // Example room ID
+        const token = localStorage.getItem('token')
+        // WebSocket connection
+        const socket = new WebSocket(`wss://ws.red-caviar-wholesale.host/wheel/?token=${token}` + userId + '/' + roomId + '/');
+
+        socket.onopen = function() {
+            console.log("Connected to WebSocket");
+        };
+
+        socket.onmessage = function(event) {
+            const data = JSON.parse(event.data);
+            if (data.action === "spin_history") {
+                displaySpinHistory(data.history);
+            }
+        };
+
+        socket.onerror = function(error) {
+            console.error("WebSocket Error:", error);
+        };
+
+        socket.onclose = function() {
+            console.log("WebSocket connection closed");
+        };
+
+        // Function to display the spin history
+        function displaySpinHistory(history) {
+            const tableBody = document.querySelector("#spinHistoryTable tbody");
+            tableBody.innerHTML = ""; // Clear existing content
+
+            history.forEach(record => {
+                const row = document.createElement("tr");
+                row.innerHTML = `
+                    <td>${record.user}</td>
+                    <td>${record.room}</td>
+                    <td>${record.result}</td>
+                    <td>${record.created_at}</td>
+                `;
+                tableBody.appendChild(row);
+            });
+
+            // Hide loading message and show history table
+            document.getElementById("loading").style.display = "none";
+            document.getElementById("spinHistory").style.display = "block";
+        }
+
+        // Request spin history data when the page loads
+        window.onload = function() {
+            socket.send(JSON.stringify({
+                action: "get_spin_history",
+                user_id: userId,
+                room_id: roomId
+            }));
+        };
+    </script>
+
+</body>
+</html>
